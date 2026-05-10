@@ -33,6 +33,7 @@ from evaluation import apply_threshold, exact_match_accuracy, f1_multilabel, ham
 from uncertainty import mc_dropout_predict  # noqa: E402
 from models import ShallowMultiLabelNet  # noqa: E402
 from preprocessing import prepare_experiment_data, split_for_validation  # noqa: E402
+from visualization import plot_class_distribution, plot_loss_curves, plot_uncertainty_heatmap, save_experiment_results  # noqa: E402
 
 
 def build_project_objects(
@@ -474,6 +475,7 @@ def train_one_experiment(
                 "outer_exact_match": final_result["exact_match_accuracy"],
                 "outer_f1_macro": final_result["f1_macro"],
                 "final_train_loss": final_result["final_train_loss"],
+                "train_losses": final_result["train_losses"],
             }
         )
 
@@ -551,6 +553,14 @@ def print_single_experiment(results: dict) -> None:
             f"best=({best_str})"
         )
 
+    plot_loss_curves(results["outer_folds"], target_name=results["target_name"])
+    plot_uncertainty_heatmap(
+        results["outer_folds"],
+        target_name=results["target_name"],
+        classes=results["classes"],
+    )
+    save_experiment_results(results)
+
 
 def compare_all_experiments(
     data_path: str,
@@ -564,6 +574,10 @@ def compare_all_experiments(
     """Corre los 6 experimentos y muestra una tabla comparativa final."""
 
     from config import TARGET_COLUMNS
+    from data_loader import load_dataframe
+
+    dataframe = load_dataframe(data_path)
+    plot_class_distribution(dataframe, TARGET_COLUMNS)
 
     all_results = []
 
@@ -730,6 +744,11 @@ def main() -> None:
         seed=args.seed,
         device_name=args.device,
     )
+
+    from data_loader import load_dataframe
+
+    dataframe = load_dataframe(args.data_path)
+    plot_class_distribution(dataframe, [args.target_name])
 
     print(f"Dispositivo usado: {results['device']}")
     print(f"Forma de X: {results['X_shape']}")
