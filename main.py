@@ -346,7 +346,7 @@ def train_one_experiment(
     outer_folds: int = DEFAULT_OUTER_FOLDS,
     inner_folds: int = DEFAULT_INNER_FOLDS,
     seed: int = DEFAULT_RANDOM_SEED,
-    device_name: str = "cpu",
+    device_name: str = "gpu",
 ) -> dict:
     """
     Ejecuta la version minima del flujo de validacion del laboratorio.
@@ -520,6 +520,90 @@ def train_one_experiment(
     }
 
 
+def print_single_experiment(results: dict) -> None:
+    """Imprime el reporte detallado de un experimento individual."""
+
+    print(f"\n{'='*60}")
+    print(f"Experimento activo: {results['target_name']}")
+    print(f"Clases encontradas: {results['classes']}  |  Y shape: {results['Y_shape']}")
+    print(
+        f"Hamming Loss:      {results['summary']['mean_hamming_loss']:.4f} "
+        f"+/- {results['summary']['std_hamming_loss']:.4f}"
+    )
+    print(
+        f"Exact Match Acc:   {results['summary']['mean_exact_match']:.4f} "
+        f"+/- {results['summary']['std_exact_match']:.4f}"
+    )
+    print(
+        f"Macro F1:          {results['summary']['mean_f1_macro']:.4f} "
+        f"+/- {results['summary']['std_f1_macro']:.4f}"
+    )
+    for fold_result in results["outer_folds"]:
+        bp = fold_result["best_params"]
+        unc = fold_result["uncertainty"]["mean_variance_global"]
+        best_str = ", ".join(f"{k}={v}" for k, v in bp.items())
+        print(
+            f"  Fold {fold_result['outer_fold']}: "
+            f"HL={fold_result['outer_hamming_loss']:.4f}  "
+            f"EMA={fold_result['outer_exact_match']:.4f}  "
+            f"F1={fold_result['outer_f1_macro']:.4f}  "
+            f"Incert={unc:.4f}  "
+            f"best=({best_str})"
+        )
+
+
+def compare_all_experiments(
+    data_path: str,
+    epochs: int,
+    outer_folds: int,
+    inner_folds: int,
+    seed: int,
+    device_name: str,
+    threshold: float,
+) -> None:
+    """Corre los 6 experimentos y muestra una tabla comparativa final."""
+
+    from config import TARGET_COLUMNS
+
+    all_results = []
+
+    for target in tqdm(TARGET_COLUMNS, desc="Experimentos"):
+        print(f"\n>>> Corriendo experimento: {target}")
+        try:
+            results = train_one_experiment(
+                data_path=data_path,
+                target_name=target,
+                epochs=epochs,
+                outer_folds=outer_folds,
+                inner_folds=inner_folds,
+                seed=seed,
+                device_name=device_name,
+                threshold=threshold,
+            )
+            print_single_experiment(results)
+            all_results.append(results)
+        except ValueError as error:
+            print(f"  [OMITIDO] {target}: {error}")
+
+    # Tabla comparativa final
+    print(f"\n{'='*60}")
+    print("COMPARACION ENTRE EXPERIMENTOS")
+    print(f"{'='*60}")
+    print(f"{'Target':<10} {'HL mean':>9} {'HL std':>8} {'EMA mean':>10} {'F1 mean':>9} {'n_clases':>9}")
+    print(f"{'-'*60}")
+    for r in all_results:
+        s = r["summary"]
+        print(
+            f"{r['target_name']:<10} "
+            f"{s['mean_hamming_loss']:>9.4f} "
+            f"{s['std_hamming_loss']:>8.4f} "
+            f"{s['mean_exact_match']:>10.4f} "
+            f"{s['mean_f1_macro']:>9.4f} "
+            f"{len(r['classes']):>9}"
+        )
+    print(f"{'='*60}")
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     """Define los argumentos de linea de comandos para el experimento base."""
 
@@ -605,14 +689,31 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default="cpu",
         help="Dispositivo para ejecutar el experimento.",
     )
+    parser.add_argument(
+        "--compare-all",
+        action="store_true",
+        help="Corre los 6 experimentos y muestra una tabla comparativa.",
+    )
     return parser
 
 
 def main() -> None:
-    """Ejecuta el flujo minimo del laboratorio."""
+    """Ejecuta el laboratorio: un experimento individual o la comparacion completa."""
 
     parser = build_argument_parser()
     args = parser.parse_args()
+
+    if args.compare_all:
+        compare_all_experiments(
+            data_path=args.data_path,
+            epochs=args.epochs,
+            outer_folds=args.outer_folds,
+            inner_folds=args.inner_folds,
+            seed=args.seed,
+            device_name=args.device,
+            threshold=args.threshold,
+        )
+        return
 
     results = train_one_experiment(
         data_path=args.data_path,
@@ -630,44 +731,9 @@ def main() -> None:
         device_name=args.device,
     )
 
-    print("Experimento ejecutado correctamente.")
-    print(f"Experimento activo: {results['target_name']}")
     print(f"Dispositivo usado: {results['device']}")
     print(f"Forma de X: {results['X_shape']}")
-    print(f"Forma de Y: {results['Y_shape']}")
-    print(f"Clases encontradas: {results['classes']}")
-    print(
-        "Hamming Loss externo promedio:   "
-        f"{results['summary']['mean_hamming_loss']:.4f} "
-        f"+/- {results['summary']['std_hamming_loss']:.4f}"
-    )
-    print(
-        "Exact Match Accuracy promedio:   "
-        f"{results['summary']['mean_exact_match']:.4f} "
-        f"+/- {results['summary']['std_exact_match']:.4f}"
-    )
-    print(
-        "Macro F1 promedio:               "
-        f"{results['summary']['mean_f1_macro']:.4f} "
-        f"+/- {results['summary']['std_f1_macro']:.4f}"
-    )
-
-    for fold_result in results["outer_folds"]:
-        bp = fold_result["best_params"]
-        unc = fold_result["uncertainty"]["mean_variance_global"]
-        best_str = ", ".join(f"{k}={v}" for k, v in bp.items())
-        print(
-            f"Fold {fold_result['outer_fold']}: "
-            f"HL={fold_result['outer_hamming_loss']:.4f}  "
-            f"EMA={fold_result['outer_exact_match']:.4f}  "
-            f"F1={fold_result['outer_f1_macro']:.4f}  "
-            f"Incert={unc:.4f}  "
-            f"[interno HL={fold_result['inner_hamming_mean']:.4f}"
-            f"+/-{fold_result['inner_hamming_std']:.4f}]  "
-            f"best=({best_str})"
-        )
-
-    print("TODO: busqueda de hiperparametros e incertidumbre.")
+    print_single_experiment(results)
 
 
 if __name__ == "__main__":
