@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Los datos pueden contener informacion sensible o ser pesados.
+dataset/*.csv
+dataset/*.sav
+dataset/*.xlsx
+dataset/*.xls

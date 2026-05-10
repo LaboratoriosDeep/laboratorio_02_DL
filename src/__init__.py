@@ -1,0 +1,1 @@
+"""Paquete base del laboratorio."""
